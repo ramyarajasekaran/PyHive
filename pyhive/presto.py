@@ -32,6 +32,9 @@ apilevel = '2.0'
 threadsafety = 2  # Threads may share the module and connections.
 paramstyle = 'pyformat'  # Python extended format codes, e.g. ...WHERE name=%(name)s
 
+logging.basicConfig(level=logging.INFO)
+# logging.addLevelName( logging.DEBUG, "\033[1;41m%s\033[1;0m" % logging.getLevelName(logging.DEBUG))
+
 _logger = logging.getLogger(__name__)
 
 
@@ -90,7 +93,7 @@ class Cursor(common.DBAPICursor):
     """
 
     def __init__(self, host, port='8080', username=None, principal_username=None, catalog='hive',
-                 schema='default', poll_interval=1, source='pyhive', session_props=None,
+                 schema='default', role=None , poll_interval=1, source='pyhive', session_props=None,
                  protocol='http', password=None, requests_session=None, requests_kwargs=None,
                  KerberosRemoteServiceName=None, KerberosPrincipal=None,
                  KerberosConfigPath=None, KerberosKeytabPath=None,
@@ -156,6 +159,7 @@ class Cursor(common.DBAPICursor):
         self._source = source
         self._session_props = session_props if session_props is not None else {}
         self.last_query_id = None
+        self._role = role
 
         if protocol not in ('http', 'https'):
             raise ValueError("Protocol must be http/https, was {!r}".format(protocol))
@@ -234,6 +238,17 @@ class Cursor(common.DBAPICursor):
             for col in self._columns
         ]
 
+    def print_info(self):
+        """
+            Print information about Cursor
+        """
+        print('User: ' +  self._username)
+        print('Catalog: ' +  self._catalog)
+        print('Role: ' +  self._role)
+        #print('Request_kwargs: ')
+        #print(str(key) for key in self._requests_kwargs.keys())
+
+
     def execute(self, operation, parameters=None):
         """Prepare and execute a database operation (query or command).
 
@@ -246,12 +261,17 @@ class Cursor(common.DBAPICursor):
             'X-Presto-User': self._username,
         }
 
+        _logger.debug("**************************** Presto Custom Execution happening! **************************** ")
         if self._session_props:
             headers['X-Presto-Session'] = ','.join(
                 '{}={}'.format(propname, propval)
                 for propname, propval in self._session_props.items()
             )
+        
+        if self._role:
+            headers['X-Presto-Role'] = self._role 
 
+        _logger.info("**************************** REQUEST HEADERS **************************** ")
         # Prepare statement
         if parameters is None:
             sql = operation
@@ -265,7 +285,7 @@ class Cursor(common.DBAPICursor):
             self._protocol,
             '{}:{}'.format(self._host, self._port), '/v1/statement', None, None, None))
         _logger.info('%s', sql)
-        _logger.debug("Headers: %s", headers)
+        _logger.info("Request Headers: %s", headers)
         response = self._requests_session.post(
             url, data=sql.encode('utf-8'), headers=headers, **self._requests_kwargs)
         self._process_response(response)
@@ -326,12 +346,18 @@ class Cursor(common.DBAPICursor):
             raise OperationalError(fmt.format(response.status_code, response.content))
 
         response_json = response.json()
+        _logger.info("**************************** RESPONSE HEADERS **************************** ")
+        _logger.info("Response headers %s", response.headers)
         _logger.debug("Got response %s", response_json)
         assert self._state == self._STATE_RUNNING, "Should be running if processing response"
         self._nextUri = response_json.get('nextUri')
         self._columns = response_json.get('columns')
         if 'id' in response_json:
             self.last_query_id = response_json['id']
+        if 'X-Presto-Set-Role' in response.headers:
+            role = response.headers['X-Presto-Set-Role']
+            self._role = role
+            _logger.debug("*************** ROLE SET TO " + role + "***************")
         if 'X-Presto-Clear-Session' in response.headers:
             propname = response.headers['X-Presto-Clear-Session']
             self._session_props.pop(propname, None)

@@ -21,7 +21,6 @@ from sqlalchemy.sql.compiler import SQLCompiler
 from pyhive import presto
 from pyhive.common import UniversalSet
 
-
 class PrestoIdentifierPreparer(compiler.IdentifierPreparer):
     # Just quote everything to make things simpler / easier to upgrade
     reserved_words = UniversalSet()
@@ -98,6 +97,7 @@ class PrestoDialect(default.DefaultDialect):
             'password': url.password
         }
         kwargs.update(url.query)
+
         if len(db_parts) == 1:
             kwargs['catalog'] = db_parts[0]
         elif len(db_parts) == 2:
