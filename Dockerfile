@@ -1,4 +1,4 @@
-FROM dva-registry.internal.salesforce.com/dva/sfdc_centos7_python3.7:11
+FROM Python3.7:11
 
 RUN mkdir certs
 COPY certs/ certs/
